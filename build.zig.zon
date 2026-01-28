@@ -1,0 +1,15 @@
+.{
+    .name = .mqtt,
+    .version = "0.1.0",
+    .fingerprint = 0x55d36e231dd9ccf7,
+    .minimum_zig_version = "0.16.0-dev.2075+62d6bbc7d",
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        // For example...
+        //"LICENSE",
+        //"README.md",
+    },
+}
