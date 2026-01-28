@@ -69,26 +69,21 @@ pub const Property = enum(u28) {
 
 /// Returns a `union` of all payload types for the given set of properties.
 pub fn Payload(comptime properties: []const Property) type {
-    const Type = @import("std").builtin.Type;
+    const UnionField = @import("std").builtin.Type.UnionField;
 
-    var fields: [properties.len]Type.UnionField = undefined;
-    for (properties, &fields) |property, *field| {
+    var field_names: [properties.len][]const u8 = undefined;
+    var field_types: [properties.len]type = undefined;
+    var field_attrs: [properties.len]UnionField.Attributes = undefined;
+
+    for (properties, &field_names, &field_types, &field_attrs) |property, *field_name, *field_type, *field_attr| {
         const T = property.payload().Type();
-        field.* = .{
-            .name = @tagName(property),
-            .type = T,
-            .alignment = @alignOf(T),
-        };
+
+        field_name.* = @tagName(property);
+        field_type.* = T;
+        field_attr.@"align" = null;
     }
 
-    const info = Type.Union{
-        .layout = .auto,
-        .tag_type = null,
-        .fields = &fields,
-        .decls = &.{},
-    };
-
-    return @Type(.{ .@"union" = info });
+    return @Union(.auto, null, &field_names, &field_types, &field_attrs);
 }
 
 /// Returns the subset of all unique properties in the given list of properties.

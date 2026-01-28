@@ -11,14 +11,14 @@ const ascii_word_mask = block: {
     break :block mask;
 };
 
-pub const DecodeError = error{ InvalidUtf8, InternalNull };
+pub const Error = error{ InvalidUtf8, InternalNull };
 
-pub fn validateLength(buf: []const u8) !void {
+pub fn validateLength(buf: []const u8) mqtt.InvalidStringLength!void {
     if (buf.len > max_len)
         return error.InvalidStringLength;
 }
 
-pub fn validate(buf: []const u8) DecodeError!void {
+pub fn validate(buf: []const u8) Error!void {
     const len = buf.len;
 
     var curr: [*]const u8 = buf.ptr;
@@ -47,7 +47,7 @@ pub fn validate(buf: []const u8) DecodeError!void {
                     break :simd;
                 };
 
-                const block: [*]const usize = @alignCast(@ptrCast(curr));
+                const block: [*]const usize = @ptrCast(@alignCast(curr));
                 const pos = findNonAsciiPos(words, block[0..words]);
                 curr += pos;
 

@@ -12,6 +12,12 @@ pub const Decoder = @import("decoder.zig");
 pub const Encoder = @import("encoder.zig");
 
 pub const target_endian = @import("builtin").target.cpu.arch.endian();
+pub const is_16bit = @bitSizeOf(usize) <= 16;
+
+pub const KeepAlive = enum(u16) {
+    unlimited = 0,
+    _,
+};
 
 /// The non-zero ID of an MQTT packet.
 pub const PacketID = enum(u16) {
@@ -32,6 +38,7 @@ pub const PacketID = enum(u16) {
 
 /// The header contents (fixed and variable) of an MQTT message.
 pub const Header = struct {
+    /// The encoded format of the fixed header byte.
     pub const Byte = packed struct(u8) {
         msg_flags: mqtt.MessageFlags,
         msg_type: mqtt.MessageType,
@@ -41,7 +48,9 @@ pub const Header = struct {
     msg_type: mqtt.MessageType,
     remaining_len: mqtt.uvar,
 
+    /// Returns the length in bytes of the MQTT message.
     pub fn packetLen(self: *const mqtt.Header) usize {
+        // FIXME: in 16-bit, u28 is not guaranteed to fit into usize!
         return self.remaining_len.val;
     }
 };
@@ -56,8 +65,11 @@ pub const Version = enum(u8) {
 
 /// The type of an MQTT message.
 pub const MessageType = enum(u4) {
+    /// The CONNECT message code.
     connect = 1,
+    /// The CONNACK message code.
     connack = 2,
+    /// The PUBLISH message code.
     publish = 3,
     puback = 4,
     pubrec = 5,
@@ -72,6 +84,7 @@ pub const MessageType = enum(u4) {
     disconnect = 14,
     auth = 15,
 
+    /// Returns an uppercase string for the given message type.
     pub inline fn string(self: MessageType) []const u8 {
         switch (self) {
             inline else => |tag| comptime {
@@ -107,8 +120,7 @@ pub const MessageFlags = packed struct(u4) {
     }
 };
 
-/// The "quality of service" requirement for message transmission of an MQTT
-/// message.
+/// The "quality of service" for an MQTT message transmission.
 pub const Qos = enum(u2) {
     pub const @"0" = Qos.at_most_once;
     pub const @"1" = Qos.at_least_once;
@@ -176,6 +188,7 @@ pub const InvalidMessageFlags = error{InvalidFlags} || InvalidQos;
 pub const InvalidMessageHeader = InvalidMessageType || InvalidMessageFlags;
 pub const InvalidVersion = error{ InvalidProtocolName, InvalidProtocolVersion };
 pub const InvalidPacketID = error{InvalidPacketID};
+pub const InvalidStringLength = error{InvalidStringLength};
 pub const InvalidQos = error{InvalidQos};
 pub const InvalidUvar = error{InvalidValue};
 
@@ -237,7 +250,7 @@ pub fn reverseBytes(bytes: []u8) void {
     }
 }
 
-const tt = @import("std").testing;
+const testing = @import("std").testing;
 
 test {
     _ = decode;
@@ -255,39 +268,61 @@ test {
 test "reverse bytes" {
     var bytes: [4]u8 = .{ 0, 1, 2, 3 };
     mqtt.reverseBytes(&bytes);
-    try tt.expectEqualSlices(u8, &.{ 3, 2, 1, 0 }, &bytes);
+    try testing.expectEqualSlices(u8, &.{ 3, 2, 1, 0 }, &bytes);
 }
 
 test "msg type string" {
-    try tt.expectEqualStrings("CONNECT", MessageType.connect.string());
-    try tt.expectEqualStrings("CONNACK", MessageType.connack.string());
-    try tt.expectEqualStrings("AUTH", MessageType.auth.string());
+    try testing.expectEqualStrings("CONNECT", MessageType.connect.string());
+    try testing.expectEqualStrings("CONNACK", MessageType.connack.string());
+    try testing.expectEqualStrings("AUTH", MessageType.auth.string());
 }
 
-test "parse generic connect" {
+test "decode CONNECT message" {
     const buf: []const u8 = &.{
         0x10, 0x10, 0x00, 0x04, 0x4d, 0x51, 0x54, 0x54, 0x04,
         0x02, 0x00, 0x3c, 0x00, 0x04, 0x44, 0x49, 0x47, 0x49,
     };
 
-    var stream_decoder = mqtt.Decoder.stream(buf);
-    const header = try mqtt.decode.connect.header(&stream_decoder);
-    try tt.expectEqual(.connect, header.msg_type);
-    try tt.expectEqual(16, header.remaining_len.val);
-    try tt.expectEqual(stream_decoder.cursor, 2);
+    var streaming = mqtt.Decoder.streaming(buf);
+    const header = try streaming.splitHeaderType(.connect);
 
-    var decoder = try stream_decoder.splitPacket(&header);
+    try testing.expectEqual(.connect, header.msg_type);
+    try testing.expectEqual(16, header.remaining_len.val);
+    try testing.expectEqual(streaming.decoder.cursor, 2);
 
+    var decoder = try streaming.splitPacket(&header);
     const version = try mqtt.decode.connect.version(&decoder);
     const msg = switch (version) {
         .v3_11 => try mqtt.v3_11.decode.connect(&decoder, true),
         .v5 => unreachable,
     };
 
-    try tt.expectEqual(.connect, header.msg_type);
-    try tt.expect(msg.auth == null);
-    try tt.expect(msg.will == null);
-    try tt.expectEqualStrings("DIGI", msg.client_id);
+    try testing.expectEqual(.connect, header.msg_type);
+    try testing.expect(msg.auth == null);
+    try testing.expect(msg.will == null);
+    try testing.expectEqual(60, msg.keep_alive);
+    try testing.expectEqualStrings("DIGI", msg.client_id);
 
     try decoder.finalize();
+}
+
+test "encode CONNECT message" {
+    const msg: v3_11.Connect = .{
+        .clean_session = true,
+        .will = null,
+        .auth = null,
+        .keep_alive = 60,
+        .client_id = "DIGI",
+    };
+
+    var buf: [18]u8 = undefined;
+    const remaining_len, const byte_count = try mqtt.v3_11.encode.connect.validate(&msg);
+    try testing.expectEqual(18, byte_count);
+
+    mqtt.v3_11.encode.connect.populate(&msg, remaining_len, &buf);
+    const expected: []const u8 = &.{
+        0x10, 0x10, 0x00, 0x04, 0x4d, 0x51, 0x54, 0x54, 0x04,
+        0x02, 0x00, 0x3c, 0x00, 0x04, 0x44, 0x49, 0x47, 0x49,
+    };
+    try testing.expectEqualSlices(u8, expected, &buf);
 }

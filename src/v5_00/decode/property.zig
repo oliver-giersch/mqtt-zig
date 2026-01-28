@@ -68,9 +68,9 @@ fn Decoder(comptime properties: []const Property) type {
         }
 
         fn decodeId(self: *Self) !?Property {
-            const id = self.inner.split(mqtt.uvar) catch |err| switch (err) {
-                mqtt.Decoder.insufficient_bytes => return null,
-                else => return err,
+            const id = self.inner.split(mqtt.uvar) catch |err| return switch (err) {
+                error.PacketLengthMismatch => null,
+                else => err,
             };
 
             for (properties) |property| {
@@ -83,7 +83,7 @@ fn Decoder(comptime properties: []const Property) type {
 
         fn decodePayload(self: *Self, comptime property: Property) !Payload {
             const value = switch (comptime property.payload()) {
-                .@"bool" => block: {
+                .bool => block: {
                     const byte = try self.inner.split(u8);
                     break :block switch (byte) {
                         0 => false,
@@ -91,9 +91,9 @@ fn Decoder(comptime properties: []const Property) type {
                         else => return error.InvalidBool,
                     };
                 },
-                .@"u8" => try self.inner.split(u8),
-                .@"u16" => try self.inner.split(u16),
-                .@"u32" => try self.inner.split(u32),
+                .u8 => try self.inner.split(u8),
+                .u16 => try self.inner.split(u16),
+                .u32 => try self.inner.split(u32),
                 .uvar => try self.inner.split(mqtt.uvar),
                 .binary_data => try self.inner.splitByteStr(),
                 .utf8_string => try self.inner.splitUtf8String(),
@@ -146,9 +146,7 @@ test "subscribe property decode" {
     try tt.expectError(error.InvalidPropertyPayload, next);
     try tt.expect(sub_decoder.decodeNext() == null);
 
-    decoder = mqtt.Decoder{
-        .buf = &.{ 0x0b, 0x0a, 0x26, 0x00, 0x04, 0x4D, 0x51, 0x54, 0x54, 0x00, 0x04, 0x4D, 0x51, 0x54, 0x54 }
-    };
+    decoder = mqtt.Decoder{ .buf = &.{ 0x0b, 0x0a, 0x26, 0x00, 0x04, 0x4D, 0x51, 0x54, 0x54, 0x00, 0x04, 0x4D, 0x51, 0x54, 0x54 } };
     sub_decoder = SubscribePropertyDecoder{ .inner = decoder };
 
     next = sub_decoder.decodeNext().?;

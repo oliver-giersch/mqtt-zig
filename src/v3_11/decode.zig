@@ -19,7 +19,7 @@ pub fn connectWithVersion(decoder: *mqtt.Decoder, strict: bool) !v3_11.Connect {
 ///
 /// Assumes, that the MQTT version has already been split off from `decoder`.
 pub fn connect(decoder: *mqtt.Decoder, strict: bool) !v3_11.Connect {
-    const flags, const keep_alive = try mqtt.decode.connect.varHeader(decoder);
+    const flags, const keep_alive = try mqtt.decode.connect.variableHeader(decoder);
     const client_id = try decoder.splitUtf8String();
     mqtt.validateClientId(client_id, strict) catch return error.InvalidClientId;
 
@@ -159,7 +159,7 @@ pub const SubDecoder = struct {
         var c: usize = 0;
 
         while (decoder.len() > 0) {
-            _ = decoder.splitByteStr() catch return error.PacketLengthMismatch;
+            _ = decoder.splitByteString() catch return error.PacketLengthMismatch;
             _ = decoder.split(u8) catch return error.PacketLengthMismatch;
             c += 1;
         }
@@ -198,13 +198,13 @@ pub const UnsubDecoder = struct {
 
 const tt = @import("std").testing;
 
-test "decode CONNACK" {
-    var decoder = mqtt.Decoder.stream(&.{ 0x20, 0x2, 0x1, 0x00 });
-    const header = try mqtt.decode.header(&decoder);
+test "decode v3.11 CONNACK" {
+    var streaming = mqtt.Decoder.streaming(&.{ 0x20, 0x2, 0x1, 0x00 });
+    const header = try streaming.splitHeader();
     try tt.expectEqual(.connack, header.msg_type);
 
-    var msg_decoder = try decoder.splitPacket(&header);
-    const msg = try mqtt.v3_11.decode.connack(&msg_decoder);
+    var decoder = try streaming.splitPacket(&header);
+    const msg = try mqtt.v3_11.decode.connack(&decoder);
     try tt.expectEqual(true, msg.session_present);
     try tt.expectEqual(.connection_accepted, msg.return_code);
 }

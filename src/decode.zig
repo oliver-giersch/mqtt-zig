@@ -6,7 +6,7 @@ const mqtt = @import("mqtt.zig");
 pub fn msgHeader(
     byte: u8,
     comptime expected: ?mqtt.MessageType,
-) mqtt.InvalidMessageHeader!mqtt.Header.Byte {
+) !mqtt.Header.Byte {
     const msg_type = try msgType(@truncate(byte >> 4));
     if (comptime expected) |e| {
         if (msg_type != e)
@@ -70,9 +70,9 @@ pub const connect = struct {
     /// Decodes the CONNECT message MQTT version and validates the supplied
     /// protocol name.
     pub fn version(decoder: *mqtt.Decoder) mqtt.Decoder.Error(mqtt.InvalidVersion)!mqtt.Version {
-        const protocol_name = decoder.splitByteStringLength(4) catch |err| switch (err) {
-            error.UnexpectedLength => return error.InvalidProtocolName,
-            else => return err,
+        const protocol_name = decoder.splitByteStringLength(4) catch |err| return switch (err) {
+            error.UnexpectedLength => error.InvalidProtocolName,
+            else => |other| other,
         };
 
         if (!mqtt.eql("MQTT", protocol_name))

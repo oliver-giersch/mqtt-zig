@@ -4,9 +4,16 @@ const std = @import("std");
 
 const v3_11 = mqtt.v3_11;
 
+/// The namespace for MQTT v3.11 CONNECT specific encoding functions.
 pub const connect = struct {
     pub fn validate(msg: *const v3_11.Connect) !struct { mqtt.uvar, usize } {
+        // The size of the connect flags header and the keep alive timer.
         var remaining_len: usize = 1 + @sizeOf(u16);
+
+        // The encoded size of the fingerprint string (6) and the protocol
+        // version byte
+        const protocol_len = 2 + "MQTT".len + 1;
+        remaining_len = try mqtt.encode.checkedAdd(remaining_len, protocol_len);
 
         const id_len = try mqtt.encode.stringBytes(msg.client_id);
         try mqtt.string.validate(msg.client_id);
@@ -41,13 +48,15 @@ pub const connect = struct {
         remaining_len: mqtt.uvar,
         buf: []u8,
     ) void {
-        var header = msgHeader(.connect);
-        header.remaining_len = remaining_len;
+        const header = mqtt.encode.msgHeader(.connect, remaining_len);
 
         var encoder = mqtt.Encoder{ .buf = buf };
         encoder.writeHeader(&header);
+        encoder.writeByteStr("MQTT");
+        encoder.writeU8(@intFromEnum(mqtt.Version.v3_11));
         encoder.writeU8(@bitCast(connectFlags(msg)));
         encoder.writeU16(msg.keep_alive);
+        encoder.writeByteStr(msg.client_id);
 
         if (msg.will) |will| {
             encoder.writeByteStr(will.topic);
@@ -67,8 +76,7 @@ pub const connack = struct {
         if (msg.session_present and msg.return_code != .connection_accepted)
             return error.InvalidConnack;
 
-        var header = msgHeader(.connack);
-        header.remaining_len = mqtt.uvar{ .val = 2 };
+        const header = mqtt.encode.msgHeader(.connack, mqtt.uvar{ .val = 2 });
 
         var encoder = mqtt.Encoder{ .buf = buf[0..] };
         encoder.writeHeader(&header);
@@ -78,16 +86,6 @@ pub const connack = struct {
 };
 
 pub const publish = struct {
-    pub fn alloc(
-        allocator: std.mem.Allocator,
-        msg: *const v3_11.Publish,
-    ) ![]u8 {
-        const remaining_len, const bytes = try publish.validate(msg);
-        const buf = try allocator.alloc(u8, bytes);
-        publish.populate(msg, remaining_len, buf);
-        return buf;
-    }
-
     pub fn validate(msg: *const v3_11.Publish) !struct { mqtt.uvar, usize } {
         var remaining_len: usize = block: {
             if (msg.flags.qos == .at_most_once) {
@@ -174,8 +172,7 @@ pub const subscribe = struct {
         remaining_len: mqtt.uvar,
         buf: []u8,
     ) void {
-        var header = msgHeader(.subscribe);
-        header.remaining_len = remaining_len;
+        const header = mqtt.encode.msgHeader(.subscribe, remaining_len);
 
         var encoder = mqtt.Encoder{ .buf = buf };
         encoder.writeHeader(&header);
@@ -207,19 +204,9 @@ fn connectFlags(msg: *const mqtt.v3_11.Connect) mqtt.ConnectFlags {
     return flags;
 }
 
-inline fn msgHeader(comptime msg_type: mqtt.MsgType) mqtt.Header {
-    const msg_flags = comptime mqtt.MsgFlags.requiredFor(msg_type) orelse
-        @compileError("no predescribed message flags for message type " ++ @tagName(msg_type));
-    return .{
-        .msg_flags = msg_flags,
-        .msg_type = msg_type,
-        .remaining_len = undefined,
-    };
-}
-
 const tt = @import("std").testing;
 
-test "encode conenct" {
+test "encode v3.11 CONNECT message" {
     const msg = mqtt.v3_11.Connect{
         .clean_session = true,
         .will = null,

@@ -1,9 +1,30 @@
 const mqtt = @import("mqtt.zig");
 
+pub const PacketSize = struct {
+    remaining_len: mqtt.uvar,
+    total_bytes: usize,
+};
+
+pub const PacketTooLarge = error{PacketTooLarge};
+pub const SizeError = if (is_16bit) PacketTooLarge else error{};
+
 const is_16bit = switch (@sizeOf(usize)) {
     2 => true,
     else => false,
 };
+
+pub inline fn msgHeader(
+    msg_type: mqtt.MessageType,
+    remaining_len: mqtt.uvar,
+) mqtt.Header {
+    const msg_flags = comptime mqtt.MessageFlags.requiredFor(msg_type) orelse
+        @compileError("no predescribed message flags for message type " ++ @tagName(msg_type));
+    return .{
+        .msg_flags = msg_flags,
+        .msg_type = msg_type,
+        .remaining_len = remaining_len,
+    };
+}
 
 /// Calculates the packet length in its "variable integer" (uvar) representation
 /// as well as its regular numeric representation.
@@ -37,7 +58,7 @@ pub fn stringBytes(string: []const u8) !usize {
         string.len + 2;
 }
 
-pub fn checkedAdd(a: usize, b: usize) !usize {
+pub fn checkedAdd(a: usize, b: usize) PacketTooLarge!usize {
     const res, const overflow = @addWithOverflow(a, b);
     return if (overflow == 0)
         res

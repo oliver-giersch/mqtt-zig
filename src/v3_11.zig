@@ -1,6 +1,8 @@
 const mqtt = @import("mqtt.zig");
 
+/// The namespace for MQTT 3.11 specific message decoding functions.
 pub const decode = @import("v3_11/decode.zig");
+/// The namespace for MQTT 3.11 specific message encoding functions.
 pub const encode = @import("v3_11/encode.zig");
 
 /// The decoded MQTT v3.11 CONNECT message contents.
@@ -9,6 +11,7 @@ pub const Connect = struct {
     will: ?mqtt.Will,
     auth: ?mqtt.Auth,
     keep_alive: u16,
+    /// The desired session client ID.
     client_id: []const u8,
 };
 
@@ -16,7 +19,9 @@ pub const Connect = struct {
 pub const Connack = struct {
     /// The return code sent in a CONNACK packet.
     pub const ReturnCode = enum(u8) {
+        /// The connection was succesfully accepted.
         connection_accepted = 0x00,
+        /// The connection was refused because of the supplied protocol version.
         unacceptable_protocol_version = 0x01,
         identifier_rejected = 0x02,
         server_unavailable = 0x03,
@@ -28,11 +33,15 @@ pub const Connack = struct {
     return_code: Connack.ReturnCode,
 };
 
-/// An MQTT v3.11 PUBLISH message.
+/// The decoded MQTT v3.11 PUBLISH message contents.
 pub const Publish = struct {
+    /// The PUBLISH message's specific flags.
     flags: mqtt.MessageFlags,
+    /// The MQTT topic string.
     topic: []const u8,
-    packet_id: mqtt.PacketId,
+    /// The MQTT packet ID.
+    packet_id: mqtt.PacketID,
+    /// The binary MQTT message payload.
     payload: []const u8,
 };
 
@@ -86,10 +95,10 @@ pub const Suback = struct {
     payload: []const Suback.ResultCode,
 };
 
-/// An MQTT v3.11 UNSUBSCRIBE packet.
+/// The decoded MQTT v3.11 UNSUBSCRIBE message contents.
 pub const Unsubscribe = mqtt.NumberedPacket(.unsubscribe);
 
-/// An MQTT v3.11 UNSUBACK packet.
+/// The decoded MQTT v3.11 UNSUBACK message contents.
 pub const Unsuback = mqtt.NumberedPacket(.unsuback);
 
 test {

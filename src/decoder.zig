@@ -26,6 +26,8 @@ pub fn SplitByteStringLengthError(comptime expected: ?u16) type {
         error{UnexpectedLength} || mqtt.PacketLengthMismatch;
 }
 
+pub const StringError = Error(mqtt.string.Error);
+
 pub const DecodeHeaderError = mqtt.InvalidMessageHeader || mqtt.InvalidUvar || mqtt.IncompleteBuffer;
 
 /// A streaming MQTT message decoder.
@@ -40,7 +42,7 @@ pub const Streaming = struct {
     pub fn splitHeaderType(
         self: *Decoder.Streaming,
         comptime expected: ?mqtt.MessageType,
-    ) DecodeHeaderError!mqtt.Header {
+    ) !mqtt.Header {
         // Split off the fixed header byte and decode it.
         const byte = self.decoder.split(u8) catch
             return error.IncompleteBuffer;
@@ -71,7 +73,7 @@ pub const Streaming = struct {
 /// The byte buffer containing the encoded MQTT packet contents.
 buf: []const u8,
 /// The current offset into the original buffer upon construction.
-cursor: usize,
+cursor: usize = 0,
 
 /// Returns a new streaming decoder for the given byte slice.
 ///
@@ -178,13 +180,13 @@ pub fn splitByteStringLength(
 
 pub fn splitUtf8String(
     self: *Decoder,
-) Error(mqtt.string.DecodeError)![]const u8 {
+) StringError![]const u8 {
     const bytes = try self.splitByteString();
     try mqtt.string.validate(bytes);
     return bytes;
 }
 
-pub fn splitUtf8StringRest(self: *Decoder) mqtt.string.DecodeError![]const u8 {
+pub fn splitUtf8StringRest(self: *Decoder) mqtt.string.Error![]const u8 {
     const bytes = self.splitBufRest();
     try mqtt.string.validate(bytes);
     return bytes;
@@ -240,6 +242,7 @@ fn bigEndianToNative(comptime T: type, bytes: [@sizeOf(T)]u8) T {
 
     var buf = bytes;
     mqtt.reverseBytes(&buf);
+
     return @bitCast(buf);
 }
 
@@ -249,7 +252,7 @@ test "split off decoder" {
     var buf: [128]u8 = @splat(0);
     var decoder = mqtt.Decoder{ .buf = &buf };
 
-    const subdecoder = decoder.splitOff(64);
+    const subdecoder = try decoder.splitOff(64);
     try testing.expectEqual(decoder.buf.len, 64);
     try testing.expectEqual(decoder.cursor, 64);
     try testing.expectEqual(subdecoder.cursor, 0);
