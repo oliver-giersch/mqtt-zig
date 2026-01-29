@@ -21,10 +21,13 @@ pub const Connack = struct {
     pub const ReturnCode = enum(u8) {
         /// The connection was succesfully accepted.
         connection_accepted = 0x00,
-        /// The connection was refused because of the supplied protocol version.
+        /// The supplied protocol version is unsupported by the server.
         unacceptable_protocol_version = 0x01,
+        /// The server rejected the client ID.
         identifier_rejected = 0x02,
+        /// The server is unavailable.
         server_unavailable = 0x03,
+        /// The client's supplied authorization was malformed.
         malformed_auth = 0x04,
         not_authorized = 0x05,
     };

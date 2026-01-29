@@ -16,8 +16,8 @@ pub fn writeHeader(self: *Self, header: *const mqtt.Header) void {
 }
 
 pub fn writeU8(self: *Self, val: u8) void {
-    const b = self.comptimeSplitBuf(@sizeOf(u8));
-    b.*[0] = val;
+    const bytes = self.comptimeSplitBuf(@sizeOf(u8));
+    bytes.*[0] = val;
 }
 
 pub fn writeU16(self: *Self, val: u16) void {

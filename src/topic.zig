@@ -70,16 +70,16 @@ fn isWildcard(c: u8) bool {
     return c == wildcards.single_level or c == wildcards.multi_level;
 }
 
-const tt = @import("std").testing;
+const testing = @import("std").testing;
 
 test "topic levels" {
     const topic = "abc/def/ghi";
     var iter = LevelIterator{ .remaining = topic };
-    try tt.expectEqualStrings("abc", iter.next().?);
-    try tt.expectEqualStrings("def", iter.next().?);
-    try tt.expectEqualStrings("ghi", iter.next().?);
-    try tt.expectEqual(null, iter.remaining);
-    try tt.expectEqual(null, iter.next());
+    try testing.expectEqualStrings("abc", iter.next().?);
+    try testing.expectEqualStrings("def", iter.next().?);
+    try testing.expectEqualStrings("ghi", iter.next().?);
+    try testing.expectEqual(null, iter.remaining);
+    try testing.expectEqual(null, iter.next());
 }
 
 test "validate topic" {
@@ -88,12 +88,12 @@ test "validate topic" {
 
 test "topic filters" {
     const err = error.InvalidWildcardPosition;
-    try tt.expectError(err, mqtt.topic.validateFilter("abc+/def"));
-    try tt.expectError(err, mqtt.topic.validateFilter("a/##"));
-    try tt.expectError(err, mqtt.topic.validateFilter("ab+"));
-    try tt.expectError(err, mqtt.topic.validateFilter("ab+"));
-    try tt.expectError(err, mqtt.topic.validateFilter("+/#/+"));
-    try tt.expectError(err, mqtt.topic.validateFilter("+/a/a+"));
+    try testing.expectError(err, mqtt.topic.validateFilter("abc+/def"));
+    try testing.expectError(err, mqtt.topic.validateFilter("a/##"));
+    try testing.expectError(err, mqtt.topic.validateFilter("ab+"));
+    try testing.expectError(err, mqtt.topic.validateFilter("ab+"));
+    try testing.expectError(err, mqtt.topic.validateFilter("+/#/+"));
+    try testing.expectError(err, mqtt.topic.validateFilter("+/a/a+"));
 
     try mqtt.topic.validateFilter("#");
     try mqtt.topic.validateFilter("sport/#");

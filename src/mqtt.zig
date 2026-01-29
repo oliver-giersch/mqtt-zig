@@ -73,7 +73,9 @@ pub const MessageType = enum(u4) {
     connack = 2,
     /// The PUBLISH message code.
     publish = 3,
+    /// The PUBACK message code.
     puback = 4,
+    /// The PUBREC message code.
     pubrec = 5,
     pubrel = 6,
     pubcomp = 7,

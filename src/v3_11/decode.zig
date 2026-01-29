@@ -63,11 +63,12 @@ pub fn connack(decoder: *mqtt.Decoder) !v3_11.Connack {
 pub fn publish(
     decoder: *mqtt.Decoder,
     header: *const mqtt.Header,
+    id_idx: ?*u32,
 ) !v3_11.Publish {
     const topic = try decoder.splitUtf8String();
     try mqtt.topic.validate(topic);
 
-    // FIXME: Note the index of the PacketID
+    if (id_idx) |idx| idx.* = @intCast(decoder.cursor);
     const packet_id: mqtt.PacketID = if (header.msg_flags.qos.get() != 0)
         try decoder.splitPacketID()
     else
@@ -231,7 +232,7 @@ test "decode v3.11 PUBLISH" {
     try testing.expectEqual(10, header.remaining_len.val);
 
     var decoder = try streaming.splitPacket(&header);
-    const msg = try mqtt.v3_11.decode.publish(&decoder, &header);
+    const msg = try mqtt.v3_11.decode.publish(&decoder, &header, null);
 
     try testing.expectEqual(.invalid, msg.packet_id);
     try testing.expectEqualSlices(u8, "test", msg.topic);
@@ -254,7 +255,7 @@ test "decode v3.11 PUBLISH qos 2" {
     try testing.expectEqual(20, header.remaining_len.val);
 
     var decoder = try streaming.splitPacket(&header);
-    const msg = try mqtt.v3_11.decode.publish(&decoder, &header);
+    const msg = try mqtt.v3_11.decode.publish(&decoder, &header, null);
 
     try testing.expectEqual(mqtt.PacketID.from(1) catch unreachable, msg.packet_id);
     try testing.expectEqualSlices(u8, "a/b/c", msg.topic);
