@@ -16,8 +16,8 @@ pub fn validateFilter(buf: []const u8) FilterError!void {
     if (buf.len == 0)
         return error.InvalidEmptyFilter;
 
-    var iter = LevelIterator{ .remaining = buf };
-    while (iter.next()) |part| {
+    var it = LevelIterator{ .remaining = buf };
+    while (it.next()) |part| {
         if (part.len == 0)
             continue;
 
@@ -29,7 +29,7 @@ pub fn validateFilter(buf: []const u8) FilterError!void {
                 return error.InvalidWildcardPosition;
         }
 
-        if (part[0] == '#' and iter.remaining != null)
+        if (part[0] == '#' and it.remaining != null)
             return error.InvalidWildcardPosition;
     }
 }
@@ -61,9 +61,8 @@ pub const LevelIterator = struct {
 };
 
 fn findSeparator(topic: []const u8) ?usize {
-    for (topic, 0..) |c, i| {
+    for (topic, 0..) |c, i|
         if (c == '/') return i;
-    }
     return null;
 }
 
