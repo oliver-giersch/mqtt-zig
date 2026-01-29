@@ -49,9 +49,11 @@ pub const Header = struct {
     remaining_len: mqtt.uvar,
 
     /// Returns the length in bytes of the MQTT message.
-    pub fn packetLen(self: *const mqtt.Header) usize {
-        // FIXME: in 16-bit, u28 is not guaranteed to fit into usize!
-        return self.remaining_len.val;
+    pub fn packetLen(self: *const mqtt.Header) mqtt.InvalidSize!usize {
+        return if (comptime mqtt.is_16bit)
+            self.remaining_len.castUsize() orelse return error.PacketTooLarge
+        else
+            self.remaining_len.castUsize();
     }
 };
 
@@ -181,6 +183,7 @@ pub fn NumberedPacket(comptime msg_type: mqtt.MessageType) type {
 
 pub const IncompleteBuffer = error{IncompleteBuffer};
 pub const PacketLengthMismatch = error{PacketLengthMismatch};
+pub const PacketTooLarge = error{PacketTooLarge};
 
 pub const InvalidBool = error{InvalidBool};
 pub const InvalidMessageType = error{InvalidMessageType};
@@ -191,6 +194,8 @@ pub const InvalidPacketID = error{InvalidPacketID};
 pub const InvalidStringLength = error{InvalidStringLength};
 pub const InvalidQos = error{InvalidQos};
 pub const InvalidUvar = error{InvalidValue};
+
+pub const InvalidSize = if (is_16bit) PacketTooLarge else error{};
 
 pub fn validateClientId(client_id: []const u8, strict: bool) !void {
     const valid_chars = "0123456789abcdefghijklmnopqrstuvwxyz";

@@ -5,9 +5,6 @@ pub const PacketSize = struct {
     total_bytes: usize,
 };
 
-pub const PacketTooLarge = error{PacketTooLarge};
-pub const SizeError = if (is_16bit) PacketTooLarge else error{};
-
 const is_16bit = switch (@sizeOf(usize)) {
     2 => true,
     else => false,
@@ -58,7 +55,7 @@ pub fn stringBytes(string: []const u8) !usize {
         string.len + 2;
 }
 
-pub fn checkedAdd(a: usize, b: usize) PacketTooLarge!usize {
+pub fn checkedAdd(a: usize, b: usize) mqtt.PacketTooLarge!usize {
     const res, const overflow = @addWithOverflow(a, b);
     return if (overflow == 0)
         res

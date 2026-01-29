@@ -1,4 +1,5 @@
 //! A generic byte stream encoder for MQTT data types.
+
 const mqtt = @import("mqtt.zig");
 
 const Self = @This();

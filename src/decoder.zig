@@ -28,14 +28,15 @@ pub fn SplitByteStringLengthError(comptime expected: ?u16) type {
 
 pub const StringError = Error(mqtt.string.Error);
 
-pub const DecodeHeaderError = mqtt.InvalidMessageHeader || mqtt.InvalidUvar || mqtt.IncompleteBuffer;
+pub const HeaderError = mqtt.InvalidMessageHeader || mqtt.InvalidUvar || mqtt.IncompleteBuffer;
+pub const PacketError = mqtt.IncompleteBuffer || mqtt.InvalidSize;
 
 /// A streaming MQTT message decoder.
 pub const Streaming = struct {
     /// ...
     decoder: Decoder,
 
-    pub fn splitHeader(self: *Decoder.Streaming) DecodeHeaderError!mqtt.Header {
+    pub fn splitHeader(self: *Decoder.Streaming) HeaderError!mqtt.Header {
         return self.splitHeaderType(null);
     }
 
@@ -63,8 +64,8 @@ pub const Streaming = struct {
     pub fn splitPacket(
         self: *Decoder.Streaming,
         header: *const mqtt.Header,
-    ) mqtt.IncompleteBuffer!Decoder {
-        const byte_count = header.packetLen();
+    ) PacketError!Decoder {
+        const byte_count = try header.packetLen();
         return self.decoder.splitOff(byte_count) catch
             error.IncompleteBuffer;
     }
