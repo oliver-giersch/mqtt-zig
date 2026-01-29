@@ -131,6 +131,10 @@ pub const Qos = enum(u2) {
     at_most_once = 0,
     at_least_once = 1,
     exactly_once = 2,
+
+    pub fn get(self: Qos) u2 {
+        return @intFromEnum(self);
+    }
 };
 
 /// The last will of an MQTT client as declared in its CONNECT message.
@@ -289,7 +293,7 @@ test "decode CONNECT message" {
     };
 
     var streaming = mqtt.Decoder.streaming(buf);
-    const header = try streaming.splitHeaderType(.connect);
+    const header = try streaming.splitHeader(.connect);
 
     try testing.expectEqual(.connect, header.msg_type);
     try testing.expectEqual(16, header.remaining_len.val);

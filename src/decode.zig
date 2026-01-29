@@ -176,7 +176,7 @@ const testing = @import("std").testing;
 
 test "decode header" {
     var streaming = mqtt.Decoder.streaming(&.{ 0x10, 0x10 });
-    const header = try streaming.splitHeaderType(.connect);
+    const header = try streaming.splitHeader(.connect);
 
     try testing.expectEqual(header.msg_type, .connect);
     try testing.expectEqual(header.remaining_len.val, 0x10);

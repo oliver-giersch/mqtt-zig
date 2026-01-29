@@ -36,11 +36,7 @@ pub const Streaming = struct {
     /// ...
     decoder: Decoder,
 
-    pub fn splitHeader(self: *Decoder.Streaming) HeaderError!mqtt.Header {
-        return self.splitHeaderType(null);
-    }
-
-    pub fn splitHeaderType(
+    pub fn splitHeader(
         self: *Decoder.Streaming,
         comptime expected: ?mqtt.MessageType,
     ) !mqtt.Header {

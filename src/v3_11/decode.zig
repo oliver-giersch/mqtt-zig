@@ -60,15 +60,21 @@ pub fn connack(decoder: *mqtt.Decoder) !v3_11.Connack {
 }
 
 /// Decodes an PUBLISH message contained in `decoder`.
-pub fn publish(decoder: *mqtt.Decoder, header: mqtt.Header) !v3_11.Publish {
+pub fn publish(
+    decoder: *mqtt.Decoder,
+    header: *const mqtt.Header,
+) !v3_11.Publish {
     const topic = try decoder.splitUtf8String();
     try mqtt.topic.validate(topic);
-    const packet_id = if (@intFromEnum(header.msg_flags.qos) != 0)
+
+    // FIXME: Note the index of the PacketID
+    const packet_id: mqtt.PacketID = if (header.msg_flags.qos.get() != 0)
         try decoder.splitPacketID()
     else
-        0;
+        .invalid;
     const payload = try decoder.splitUtf8StringRest();
 
+    try decoder.finalize();
     return .{
         .flags = header.msg_flags,
         .topic = topic,
@@ -196,17 +202,90 @@ pub const UnsubDecoder = struct {
     }
 };
 
-const tt = @import("std").testing;
+const testing = @import("std").testing;
 
 test "decode v3.11 CONNACK" {
     var streaming = mqtt.Decoder.streaming(&.{ 0x20, 0x2, 0x1, 0x00 });
-    const header = try streaming.splitHeader();
-    try tt.expectEqual(.connack, header.msg_type);
+    const header = try streaming.splitHeader(null);
+    try testing.expectEqual(.connack, header.msg_type);
 
     var decoder = try streaming.splitPacket(&header);
     const msg = try mqtt.v3_11.decode.connack(&decoder);
-    try tt.expectEqual(true, msg.session_present);
-    try tt.expectEqual(.connection_accepted, msg.return_code);
+    try testing.expectEqual(true, msg.session_present);
+    try testing.expectEqual(.connection_accepted, msg.return_code);
+}
+
+test "decode v3.11 PUBLISH" {
+    const buf: []const u8 = &.{
+        0x30, 0x0a, 0x00, 0x04, 0x74, 0x65,
+        0x73, 0x74, 0x74, 0x65, 0x73, 0x74,
+    };
+
+    var streaming = mqtt.Decoder.streaming(buf);
+    const header = try streaming.splitHeader(null);
+
+    try testing.expectEqual(.publish, header.msg_type);
+    try testing.expectEqual(false, header.msg_flags.retain);
+    try testing.expectEqual(.at_most_once, header.msg_flags.qos);
+    try testing.expectEqual(false, header.msg_flags.dup);
+    try testing.expectEqual(10, header.remaining_len.val);
+
+    var decoder = try streaming.splitPacket(&header);
+    const msg = try mqtt.v3_11.decode.publish(&decoder, &header);
+
+    try testing.expectEqual(.invalid, msg.packet_id);
+    try testing.expectEqualSlices(u8, "test", msg.topic);
+    try testing.expectEqualSlices(u8, "test", msg.payload);
+}
+
+test "decode v3.11 PUBLISH qos 2" {
+    const buf: []const u8 = &.{
+        0x34, 0x14, 0x00, 0x05, 0x61, 0x2F, 0x62, 0x2F, 0x63, 0x00, 0x01,
+        0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x77, 0x6F, 0x72, 0x6C, 0x64,
+    };
+
+    var streaming = mqtt.Decoder.streaming(buf);
+    const header = try streaming.splitHeader(null);
+
+    try testing.expectEqual(.publish, header.msg_type);
+    try testing.expectEqual(false, header.msg_flags.retain);
+    try testing.expectEqual(.exactly_once, header.msg_flags.qos);
+    try testing.expectEqual(false, header.msg_flags.dup);
+    try testing.expectEqual(20, header.remaining_len.val);
+
+    var decoder = try streaming.splitPacket(&header);
+    const msg = try mqtt.v3_11.decode.publish(&decoder, &header);
+
+    try testing.expectEqual(mqtt.PacketID.from(1) catch unreachable, msg.packet_id);
+    try testing.expectEqualSlices(u8, "a/b/c", msg.topic);
+    try testing.expectEqualSlices(u8, "hello world", msg.payload);
+}
+
+test "decode incomplete message(s)" {
+    const buf: []const u8 = &.{
+        0x10, 0x10, 0x00, 0x04, 0x4d, 0x51, 0x54, 0x54, 0x04, 0x02, 0x00, 0x3c, 0x00,
+        0x04, 0x44, 0x49, 0x47, 0x49, 0x30, 0x0a, 0x00, 0x04, 0x74, 0x65, 0x73,
+    };
+
+    var streaming = mqtt.Decoder.streaming(buf);
+    const header = try streaming.splitHeader(null);
+
+    try testing.expectEqual(.connect, header.msg_type);
+    try testing.expectEqual(16, header.remaining_len.val);
+
+    var decoder = try streaming.splitPacket(&header);
+    const msg = try mqtt.v3_11.decode.connect(&decoder, true);
+
+    try testing.expectEqual("DIGI", msg.client_id);
+
+    const next_header = try streaming.splitHeader(null);
+
+    try testing.expectEqual(.publish, next_header.msg_type);
+    try testing.expectEqual(16, next_header.remaining_len.val);
+
+    const result = streaming.splitPacket(&next_header);
+
+    try testing.expectError(error.IncompleteBuffer, result);
 }
 
 test "decode subscriptions" {
@@ -216,9 +295,9 @@ test "decode subscriptions" {
         },
     };
 
-    try tt.expectEqual(decoder.count(), 1);
+    try testing.expectEqual(decoder.count(), 1);
     while (try decoder.decodeNext()) |sub| {
-        try tt.expectEqualStrings(sub.topic_filter, "MQTT");
-        try tt.expectEqual(sub.requested_qos, .exactly_once);
+        try testing.expectEqualStrings(sub.topic_filter, "MQTT");
+        try testing.expectEqual(sub.requested_qos, .exactly_once);
     }
 }
