@@ -14,7 +14,7 @@ pub inline fn msgHeader(
     msg_type: mqtt.MessageType,
     remaining_len: mqtt.uvar,
 ) mqtt.Header {
-    const msg_flags = comptime mqtt.MessageFlags.requiredFor(msg_type) orelse
+    const msg_flags = comptime mqtt.MessageFlags.required(msg_type) orelse
         @compileError("no predescribed message flags for message type " ++ @tagName(msg_type));
     return .{
         .msg_flags = msg_flags,

@@ -59,6 +59,9 @@ pub const Header = struct {
 
 /// The MQTT protocol version.
 pub const Version = enum(u8) {
+    /// The size of the protocol name string and length and the version byte.
+    pub const byte_count = @sizeOf(u16) + 4 + 1;
+
     /// The MQTT v3.1.1 identifier.
     v3_11 = 4,
     /// The MQTT v5 identifier.
@@ -77,15 +80,25 @@ pub const MessageType = enum(u4) {
     puback = 4,
     /// The PUBREC message code.
     pubrec = 5,
+    /// The PUBREL message code.
     pubrel = 6,
+    /// The PUBCOMP message code.
     pubcomp = 7,
+    /// The SUBSCRIBE message code.
     subscribe = 8,
+    /// The SUBACK message code.
     suback = 9,
+    /// The UNSUBSCRIBE message code.
     unsubscribe = 10,
+    /// The UNSUBACK message code.
     unsuback = 11,
+    /// The PINGREQ message code.
     pingreq = 12,
+    /// The PINGRESP message code.
     pingresp = 13,
+    /// The DISCONNECT message code.
     disconnect = 14,
+    /// The AUTH message code.
     auth = 15,
 
     /// Returns an uppercase string for the given message type.
@@ -107,6 +120,8 @@ pub const MessageType = enum(u4) {
 
 /// The flags of an MQTT message header.
 pub const MessageFlags = packed struct(u4) {
+    pub const default: MessageFlags = .{};
+
     retain: bool = false,
     qos: mqtt.Qos = .at_most_once,
     dup: bool = false,
@@ -115,7 +130,9 @@ pub const MessageFlags = packed struct(u4) {
         return a.retain == b.retain and a.qos == b.qos and a.dup == b.dup;
     }
 
-    pub inline fn requiredFor(msg_type: MessageType) ?MessageFlags {
+    /// Returns the message flags required for the given message type or null,
+    /// if the message type has no specific requirements for the message flags.
+    pub inline fn required(msg_type: MessageType) ?MessageFlags {
         return switch (msg_type) {
             .publish => null,
             .pubrel, .subscribe, .unsubscribe => .{ .qos = .at_least_once },
@@ -176,13 +193,29 @@ pub const ConnectFlags = packed struct(u8) {
     user_flag: bool,
 };
 
+/// The decoded contents of a MQTT PUBLISH message.
+pub const Publish = struct {
+    pub const msg_type: mqtt.MessageType = .publish;
+
+    /// The PUBLISH message's specific flags.
+    flags: mqtt.MessageFlags,
+    /// The MQTT topic string.
+    topic: []const u8,
+    /// The MQTT packet ID.
+    packet_id: mqtt.PacketID,
+    /// The binary MQTT message payload.
+    payload: []const u8,
+};
+
 pub const Subscribe = struct {
     packet_id: mqtt.PacketId,
 };
 
-pub fn NumberedPacket(comptime msg_type: mqtt.MessageType) type {
+/// A generic stateless packet with only a packet ID.
+pub fn StatelessPacket(comptime message_type: mqtt.MessageType) type {
     return struct {
-        const _ = msg_type;
+        pub const msg_type = message_type;
+
         packet_id: mqtt.PacketId,
     };
 }
@@ -261,6 +294,32 @@ pub fn reverseBytes(bytes: []u8) void {
     }
 }
 
+pub fn decodeCode(comptime E: type, code: BackingInt(E)) ?E {
+    const type_info = @typeInfo(E);
+    if (!type_info.@"enum".is_exhaustive)
+        @compileError("code must be exhaustive enum");
+
+    const valid_codes = comptime block: {
+        const fields = type_info.@"enum".fields;
+        var array: [fields.len]BackingInt(E) = undefined;
+        for (fields, &array) |field, *value|
+            value.* = @intCast(field.value);
+        break :block array;
+    };
+
+    for (valid_codes) |value|
+        if (value == code) return @enumFromInt(value);
+    return null;
+}
+
+fn BackingInt(comptime E: type) type {
+    const type_info = @typeInfo(E);
+    return switch (type_info) {
+        .@"enum" => |info| info.tag_type,
+        else => unreachable,
+    };
+}
+
 const testing = @import("std").testing;
 
 test {
@@ -304,7 +363,7 @@ test "decode CONNECT message" {
     var decoder = try streaming.splitPacket(&header);
     const version = try mqtt.decode.connect.version(&decoder);
     const msg = switch (version) {
-        .v3_11 => try mqtt.v3_11.decode.connect(&decoder, true),
+        .v3_11 => try mqtt.v3_11.decode.connect(&decoder, &header, true),
         .v5 => unreachable,
     };
 

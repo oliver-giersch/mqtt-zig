@@ -36,26 +36,16 @@ pub const Connack = struct {
     return_code: Connack.ReturnCode,
 };
 
-/// The decoded MQTT v3.11 PUBLISH message contents.
-pub const Publish = struct {
-    /// The PUBLISH message's specific flags.
-    flags: mqtt.MessageFlags,
-    /// The MQTT topic string.
-    topic: []const u8,
-    /// The MQTT packet ID.
-    packet_id: mqtt.PacketID,
-    /// The binary MQTT message payload.
-    payload: []const u8,
-};
+pub const Publish = mqtt.Publish;
 
 /// An MQTT v3.11 PUBACK packet.
-pub const Puback = mqtt.NumberedPacket(.puback);
+pub const Puback = mqtt.StatelessPacket(.puback);
 
 /// An MQTT v3.11  PUBREL packet.
-pub const Pubrel = mqtt.NumberedPacket(.pubrel);
+pub const Pubrel = mqtt.StatelessPacket(.pubrel);
 
 /// An MQTT v3.11 PUBCOMP packet.
-pub const Pubcomp = mqtt.NumberedPacket(.pubcomp);
+pub const Pubcomp = mqtt.StatelessPacket(.pubcomp);
 
 /// An MQTT v3.11 SUBSCRIBE packet.
 pub const Subscribe = mqtt.Subscribe;
@@ -94,15 +84,15 @@ pub const Suback = struct {
         }
     };
 
-    packet_id: mqtt.PacketId,
+    packet_id: mqtt.PacketID,
     payload: []const Suback.ResultCode,
 };
 
 /// The decoded MQTT v3.11 UNSUBSCRIBE message contents.
-pub const Unsubscribe = mqtt.NumberedPacket(.unsubscribe);
+pub const Unsubscribe = mqtt.StatelessPacket(.unsubscribe);
 
 /// The decoded MQTT v3.11 UNSUBACK message contents.
-pub const Unsuback = mqtt.NumberedPacket(.unsuback);
+pub const Unsuback = mqtt.StatelessPacket(.unsuback);
 
 test {
     _ = decode;

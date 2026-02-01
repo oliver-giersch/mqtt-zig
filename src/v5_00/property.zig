@@ -75,7 +75,12 @@ pub fn Payload(comptime properties: []const Property) type {
     var field_types: [properties.len]type = undefined;
     var field_attrs: [properties.len]UnionField.Attributes = undefined;
 
-    for (properties, &field_names, &field_types, &field_attrs) |property, *field_name, *field_type, *field_attr| {
+    for (
+        properties,
+        &field_names,
+        &field_types,
+        &field_attrs,
+    ) |property, *field_name, *field_type, *field_attr| {
         const T = property.payload().Type();
 
         field_name.* = @tagName(property);
@@ -87,7 +92,9 @@ pub fn Payload(comptime properties: []const Property) type {
 }
 
 /// Returns the subset of all unique properties in the given list of properties.
-pub inline fn uniqueProperties(comptime properties: []const Property) []const Property {
+pub inline fn uniqueProperties(
+    comptime properties: []const Property,
+) []const Property {
     var unique: [properties.len]Property = undefined;
     var count: usize = 0;
     for (properties) |property| {
@@ -191,7 +198,7 @@ fn mapMetadata(map: anytype) [all_properties.len]Metadata {
         if (field.type != Metadata)
             @compileError("map must only contain metadata fields");
         for (all_properties) |property| {
-            @setEvalBranchQuota(4000);
+            @setEvalBranchQuota(3000);
             if (mqtt.eql(@tagName(property), field.name)) {
                 result[property.index()] = @field(map, field.name);
                 continue :outer;

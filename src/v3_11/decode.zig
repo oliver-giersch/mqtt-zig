@@ -4,21 +4,17 @@ const mqtt = @import("../mqtt.zig");
 
 const v3_11 = mqtt.v3_11;
 
-// fixme:
-// naming? connectLessVersion? connectWithoutVersion? connectNoVersion?
-// connectPartial? connectTrunc? connect
-
-pub fn connectWithVersion(decoder: *mqtt.Decoder, strict: bool) !v3_11.Connect {
-    const version = try mqtt.decode.connect.version(decoder);
-    if (version != .v3_11)
-        return error.UnexpectedVersion;
-    return connect(decoder, strict);
-}
-
 /// Decodes a CONNECT message.
 ///
-/// Assumes, that the MQTT version has already been split off from `decoder`.
-pub fn connect(decoder: *mqtt.Decoder, strict: bool) !v3_11.Connect {
+/// Asserts, that the decoder has already split off the MQTT version.
+pub fn connect(
+    decoder: *mqtt.Decoder,
+    header: *const mqtt.Header,
+    strict: bool,
+) !v3_11.Connect {
+    mqtt.assert(header.msg_type == .connect);
+    mqtt.assert(decoder.len() == header.remaining_len.val - mqtt.Version.byte_count);
+
     const flags, const keep_alive = try mqtt.decode.connect.variableHeader(decoder);
     const client_id = try decoder.splitUtf8String();
     mqtt.validateClientId(client_id, strict) catch return error.InvalidClientId;
@@ -42,16 +38,26 @@ pub fn connect(decoder: *mqtt.Decoder, strict: bool) !v3_11.Connect {
 }
 
 /// Decodes an CONNACK message in `decoder`.
-pub fn connack(decoder: *mqtt.Decoder) !v3_11.Connack {
+pub fn connack(
+    decoder: *mqtt.Decoder,
+    header: *const mqtt.Header,
+) !v3_11.Connack {
+    mqtt.assert(header.msg_type == .connack);
+
     const session_present = try decoder.splitBool();
-    const return_code: v3_11.Connack.ReturnCode = switch (try decoder.split(u8)) {
-        0...5 => |rc| block: {
-            if (rc != 0 and session_present)
-                return error.InvalidConnack;
-            break :block @enumFromInt(rc);
-        },
-        else => return error.InvalidReturnCode,
-    };
+    const return_code = mqtt.decodeCode(
+        v3_11.Connack.ReturnCode,
+        try decoder.split(u8),
+    ) orelse return error.InvalidReturnCode;
+
+    //const return_code: v3_11.Connack.ReturnCode = switch () {
+    //    0...5 => |rc| block: {
+    //        if (rc != 0 and session_present)
+    //            return error.InvalidConnack;
+    //        break :block @enumFromInt(rc);
+    //    },
+    //    else => return error.InvalidReturnCode,
+    //};
 
     return .{
         .session_present = session_present,
@@ -65,14 +71,13 @@ pub fn publish(
     header: *const mqtt.Header,
     id_idx: ?*u32,
 ) !v3_11.Publish {
-    const topic = try decoder.splitUtf8String();
-    try mqtt.topic.validate(topic);
+    mqtt.assert(header.msg_type == .publish);
 
-    if (id_idx) |idx| idx.* = @intCast(decoder.cursor);
-    const packet_id: mqtt.PacketID = if (header.msg_flags.qos.get() != 0)
-        try decoder.splitPacketID()
-    else
-        .invalid;
+    const topic, const packet_id = try mqtt.decode.publish.variableHeader(
+        decoder,
+        header,
+        id_idx,
+    );
     const payload = try decoder.splitUtf8StringRest();
 
     try decoder.finalize();
@@ -84,21 +89,53 @@ pub fn publish(
     };
 }
 
-pub fn puback(decoder: *mqtt.Decoder) !v3_11.Puback {
-    return mqtt.decode.numbered(.puback, decoder);
+pub fn puback(
+    decoder: *mqtt.Decoder,
+    header: *const mqtt.Header,
+) !v3_11.Puback {
+    mqtt.assert(header.msg_type == .puback);
+    return mqtt.decode.stateless(.puback, decoder);
 }
 
 pub fn pubrel(decoder: *mqtt.Decoder) !v3_11.Pubrel {
-    return mqtt.decode.numbered(.pubrel, decoder);
+    return mqtt.decode.stateless(.pubrel, decoder);
 }
 
 pub fn pubcomp(decoder: *mqtt.Decoder) !v3_11.Pubcomp {
-    return mqtt.decode.numbered(.pubcomp, decoder);
+    return mqtt.decode.stateless(.pubcomp, decoder);
 }
 
-pub fn subscribe(decoder: *mqtt.Decoder) !struct { v3_11.Subscribe, v3_11.decode.SubDecoder } {
+/// Decodes a SUBSCRIBE message contained in `decoder`.
+///
+/// Returns the message contents and a decoding iterator for the individual
+/// subscriptions.
+///
+/// # Example
+///
+/// ```
+/// var streaming = mqtt.Decoder.streaming(buf);
+/// const header = try streaming.splitHeader(.subscribe);
+/// var decoder = try streaming.splitPacket(&header);
+/// const msg, var sub_decoder = try mqtt.v3_11.decode.subscribe(&decoder, &header);
+///
+/// var subs: [8]mqtt.v3_11.Subscription = undefined;
+/// var i: usize = 0;
+/// while (try sub_decoder.decodeNext()) |sub| {
+///     subs[i] = sub;
+///     i += 1;
+///
+///     if (i == subs.len)
+///         return error.OutOfMemory;
+/// }
+/// ```
+pub fn subscribe(
+    decoder: *mqtt.Decoder,
+    header: *const mqtt.Header,
+) !struct { v3_11.Subscribe, v3_11.decode.SubscribeDecoder } {
+    mqtt.assert(header.msg_type == .subscribe);
+
     const sub = mqtt.Subscribe{ .packet_id = try decoder.splitPacketID() };
-    const sub_decoder = SubDecoder{ .inner = decoder.splitOffRest() };
+    const sub_decoder = SubscribeDecoder{ .inner = decoder.splitOffRest() };
 
     return .{ sub, sub_decoder };
 }
@@ -119,7 +156,9 @@ pub fn suback(decoder: *mqtt.Decoder) !v3_11.Suback {
     };
 }
 
-pub fn unsubscribe(decoder: *mqtt.Decoder) !struct { v3_11.Unsubscribe, v3_11.decode.UnsubDecoder } {
+pub fn unsubscribe(
+    decoder: *mqtt.Decoder,
+) !struct { v3_11.Unsubscribe, v3_11.decode.UnsubDecoder } {
     const unsub = v3_11.Unsubscribe{ .packet_id = try decoder.splitPacketID() };
     const unsub_decoder = UnsubDecoder{ .inner = decoder.splitOffRest() };
     try decoder.finalize();
@@ -129,11 +168,11 @@ pub fn unsubscribe(decoder: *mqtt.Decoder) !struct { v3_11.Unsubscribe, v3_11.de
 
 /// Decodes
 pub fn unsuback(decoder: *mqtt.Decoder) !v3_11.Unsubscribe {
-    return mqtt.decode.numbered(.unsuback, decoder);
+    return mqtt.decode.stateless(.unsuback, decoder);
 }
 
 /// An MQTT v3.11 Subscription decoder.
-pub const SubDecoder = struct {
+pub const SubscribeDecoder = struct {
     const Self = @This();
 
     pub const Error = mqtt.Decoder.StringError || mqtt.topic.FilterError || mqtt.InvalidQos || error{InvalidSubscriptionReservedBits};
@@ -149,7 +188,7 @@ pub const SubDecoder = struct {
 
         const qos_byte = try self.inner.split(u8);
         const requested_qos = try mqtt.decode.qos(@truncate(qos_byte));
-        // c.f. §MQTT-3-8.3-4
+        // c.f. §MQTT-3-8.3-4: remaining bits must be zeroed
         if ((qos_byte >> 2) != 0)
             return error.InvalidSubscriptionReservedBits;
 
@@ -166,8 +205,8 @@ pub const SubDecoder = struct {
         var c: usize = 0;
 
         while (decoder.len() > 0) {
-            _ = decoder.splitByteString() catch return error.PacketLengthMismatch;
-            _ = decoder.split(u8) catch return error.PacketLengthMismatch;
+            _ = try decoder.splitByteString();
+            _ = try decoder.split(u8);
             c += 1;
         }
 
@@ -206,12 +245,12 @@ pub const UnsubDecoder = struct {
 const testing = @import("std").testing;
 
 test "decode v3.11 CONNACK" {
-    var streaming = mqtt.Decoder.streaming(&.{ 0x20, 0x2, 0x1, 0x00 });
+    var streaming = mqtt.Decoder.streaming(&.{ 0x20, 0x02, 0x01, 0x00 });
     const header = try streaming.splitHeader(null);
     try testing.expectEqual(.connack, header.msg_type);
 
     var decoder = try streaming.splitPacket(&header);
-    const msg = try mqtt.v3_11.decode.connack(&decoder);
+    const msg = try mqtt.v3_11.decode.connack(&decoder, &header);
     try testing.expectEqual(true, msg.session_present);
     try testing.expectEqual(.connection_accepted, msg.return_code);
 }
@@ -275,14 +314,15 @@ test "decode incomplete message(s)" {
     try testing.expectEqual(16, header.remaining_len.val);
 
     var decoder = try streaming.splitPacket(&header);
-    const msg = try mqtt.v3_11.decode.connect(&decoder, true);
+    _ = try mqtt.decode.connect.version(&decoder);
+    const msg = try mqtt.v3_11.decode.connect(&decoder, &header, true);
 
-    try testing.expectEqual("DIGI", msg.client_id);
+    try testing.expectEqualStrings("DIGI", msg.client_id);
 
     const next_header = try streaming.splitHeader(null);
 
     try testing.expectEqual(.publish, next_header.msg_type);
-    try testing.expectEqual(16, next_header.remaining_len.val);
+    try testing.expectEqual(10, next_header.remaining_len.val);
 
     const result = streaming.splitPacket(&next_header);
 
@@ -290,7 +330,7 @@ test "decode incomplete message(s)" {
 }
 
 test "decode subscriptions" {
-    var decoder = mqtt.v3_11.decode.SubDecoder{
+    var decoder = mqtt.v3_11.decode.SubscribeDecoder{
         .inner = mqtt.Decoder{
             .buf = &.{ 0x00, 0x04, 0x4D, 0x51, 0x54, 0x54, 0x02 },
         },

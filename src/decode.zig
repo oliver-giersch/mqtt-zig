@@ -34,7 +34,7 @@ pub fn msgFlags(
     _ = try mqtt.decode.qos(@truncate(byte >> 1));
     const flags: mqtt.MessageFlags = @bitCast(byte);
 
-    const expected = mqtt.MessageFlags.requiredFor(msg_type) orelse return flags;
+    const expected = mqtt.MessageFlags.required(msg_type) orelse return flags;
     return if (flags.eql(expected))
         flags
     else
@@ -164,7 +164,29 @@ pub const connect = struct {
     }
 };
 
-pub fn numbered(comptime msg_type: mqtt.MessageType, decoder: *mqtt.Decoder) !mqtt.NumberedPacket(msg_type) {
+pub const publish = struct {
+    pub fn variableHeader(
+        decoder: *mqtt.Decoder,
+        header: *const mqtt.Header,
+        id_idx: ?*u32,
+    ) !struct { []const u8, mqtt.PacketID } {
+        const topic = try decoder.splitUtf8String();
+        try mqtt.topic.validate(topic);
+
+        if (id_idx) |idx| idx.* = @intCast(decoder.cursor);
+        const packet_id: mqtt.PacketID = if (header.msg_flags.qos.get() != 0)
+            try decoder.splitPacketID()
+        else
+            .invalid;
+
+        return .{ topic, packet_id };
+    }
+};
+
+pub fn stateless(
+    comptime msg_type: mqtt.MessageType,
+    decoder: *mqtt.Decoder,
+) !mqtt.StatelessPacket(msg_type) {
     const packet_id = try decoder.splitPacketID();
     try decoder.finalize();
     return .{
