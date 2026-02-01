@@ -1,46 +1,23 @@
 const mqtt = @import("../../mqtt.zig");
 
-const Property = mqtt.v5_00.property.Property;
+pub const Property = mqtt.v5_00.Property;
 
-pub const PublishPropertyDecoder = Decoder(&.{
-    .payload_format_indicator,
-    .message_expiry_interval,
-    .content_type,
-    .response_topic,
-    .correlation_data,
-    .subscription_identifier,
-    .topic_alias,
-    .user_property,
-});
+pub const ConnectPropertyDecoder = Decoder(mqtt.v5_00.ConnectProperty);
+pub const WillPropertyDecoder = Decoder(mqtt.v5_00.WillProperty);
+pub const PublishPropertyDecoder = Decoder(mqtt.v5_00.PublishProperty);
+pub const PubackPropertyDecoder = Decoder(mqtt.v5_00.PubackProperty);
+pub const SubscribePropertyDecoder = Decoder(mqtt.v5_00.SubscribeProperty);
 
-pub const PubackPropertyDecoder = Decoder(&.{
-    .reason_string,
-    .user_property,
-});
-
-pub const SubscribePropertyDecoder = Decoder(&.{
-    .subscription_identifier,
-    .user_property,
-});
-
-pub const WillPropertyDecoder = Decoder(&.{
-    .payload_format_indicator,
-    .message_expiry_interval,
-    .content_type,
-    .response_topic,
-    .correlation_data,
-    .user_property,
-});
-
-fn Decoder(comptime properties: []const Property) type {
+fn Decoder(comptime E: type) type {
     return struct {
         const Self = @This();
 
-        pub const Payload = mqtt.v5_00.property.Payload(properties);
+        pub const SubProperty = E;
+        pub const Payload = mqtt.v5_00.Property.Payload(SubProperty);
 
         const BitSet = u16;
 
-        const unique_properties = mqtt.v5_00.property.uniqueProperties(properties);
+        const unique_properties = mqtt.v5_00.Property.uniqueProperties(SubProperty);
         comptime {
             if (unique_properties.len >= @bitSizeOf(BitSet))
                 @compileError("unique properties can't be tracked with bit set size");
@@ -51,21 +28,23 @@ fn Decoder(comptime properties: []const Property) type {
 
         pub fn splitOff(decoder: *mqtt.Decoder) !Self {
             const property_len = try decoder.split(mqtt.uvar);
-            const inner = try decoder.splitOff(property_len);
+            const byte_count: usize = @intCast(property_len.val);
+            const inner = try decoder.splitOff(byte_count);
 
             return .{ .inner = inner };
         }
 
         pub fn decodeNext(self: *Self) !?Self.Payload {
-            const property = try self.decodeId() orelse return null;
-            const payload = inline for (properties) |p| {
-                if (property == p) {
+            const sub_property = try self.decodeId() orelse return null;
+            const payload = switch (sub_property) {
+                inline else => |p| block: {
                     const payload = self.decodePayload(p) catch
                         return error.InvalidPropertyPayload;
-                    break payload;
-                }
-            } else unreachable;
+                    break :block payload;
+                },
+            };
 
+            const property = toSuper(sub_property);
             if (property.isUnique()) {
                 const bit = Self.uniqueBit(property);
                 if (self.unique_mask & bit != 0)
@@ -76,28 +55,26 @@ fn Decoder(comptime properties: []const Property) type {
             return payload;
         }
 
-        fn decodeId(self: *Self) !?Property {
+        fn decodeId(self: *Self) !?SubProperty {
             const id = self.inner.split(mqtt.uvar) catch |err| return switch (err) {
                 error.PacketLengthMismatch => null,
                 else => err,
             };
 
-            for (properties) |property| {
-                if (@intFromEnum(property) == id.val)
-                    return property;
-            }
-
-            return error.InvalidProperty;
+            const property = mqtt.decodeCode(SubProperty, id.val) orelse
+                return error.InvalidProperty;
+            return property;
         }
 
-        fn decodePayload(self: *Self, comptime property: Property) !Payload {
+        fn decodePayload(self: *Self, comptime sub_property: SubProperty) !Payload {
+            const property = toSuper(sub_property);
             const value = switch (comptime property.payload()) {
                 .bool => try self.inner.splitBool(),
                 .u8 => try self.inner.split(u8),
                 .u16 => try self.inner.split(u16),
                 .u32 => try self.inner.split(u32),
                 .uvar => try self.inner.split(mqtt.uvar),
-                .binary_data => try self.inner.splitByteStr(),
+                .binary_data => try self.inner.splitByteString(),
                 .utf8_string => try self.inner.splitUtf8String(),
                 .utf8_string_pair => block: {
                     const key = try self.inner.splitUtf8String();
@@ -110,7 +87,12 @@ fn Decoder(comptime properties: []const Property) type {
             };
 
             try property.validate(value);
-            return @unionInit(Payload, @tagName(property), value);
+            return @unionInit(Payload, @tagName(sub_property), value);
+        }
+
+        inline fn toSuper(sub: SubProperty) Property {
+            const code: u28 = @intFromEnum(sub);
+            return @enumFromInt(code);
         }
 
         inline fn uniqueBit(property: Property) u4 {

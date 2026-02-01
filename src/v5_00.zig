@@ -2,13 +2,34 @@ const mqtt = @import("mqtt.zig");
 
 pub const decode = @import("v5_00/decode.zig");
 pub const encode = @import("v5_00/encode.zig");
-pub const property = @import("v5_00/property.zig");
+
+pub const Property = property.Property;
+pub const ConnectProperty = property.ConnectProperty;
+pub const WillProperty = property.WillProperty;
+pub const PublishProperty = property.PublishProperty;
+pub const PubackProperty = property.PubackProperty;
+pub const SubscribeProperty = property.SubscribeProperty;
+
+const property = @import("v5_00/property.zig");
 
 /// An MQTT user property UTF-8 string pair.
 pub const StringPair = struct {
     key: []const u8,
     val: []const u8,
 };
+
+/// The decoded MQTT v5 CONNECT message contents.
+pub const Connect = struct {
+    clean_start: bool,
+    will: ?struct { mqtt.Will, decode.WillPropertyDecoder },
+    auth: ?mqtt.Auth,
+    keep_alive: u16,
+    /// The desired session client ID.
+    client_id: []const u8,
+};
+
+/// The decoded MQTT v5 PUBLISH message contents.
+pub const Publish = mqtt.Publish;
 
 /// An MQTT v5 PUBACK packet.
 pub const Puback = struct {
@@ -51,5 +72,5 @@ pub const Subscription = struct {
 test {
     _ = decode;
     _ = encode;
-    _ = property;
+    _ = Property;
 }

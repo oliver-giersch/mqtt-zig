@@ -197,7 +197,7 @@ pub const ConnectFlags = packed struct(u8) {
 pub const Publish = struct {
     pub const msg_type: mqtt.MessageType = .publish;
 
-    /// The PUBLISH message's specific flags.
+    /// The PUBLISH message header's specific flags.
     flags: mqtt.MessageFlags,
     /// The MQTT topic string.
     topic: []const u8,
@@ -236,7 +236,7 @@ pub const InvalidUvar = error{InvalidValue};
 
 pub const InvalidSize = if (is_16bit) PacketTooLarge else error{};
 
-pub fn validateClientId(client_id: []const u8, strict: bool) !void {
+pub fn validateClientID(client_id: []const u8, strict: bool) !void {
     const valid_chars = "0123456789abcdefghijklmnopqrstuvwxyz";
 
     if (!strict)
@@ -292,32 +292,6 @@ pub fn reverseBytes(bytes: []u8) void {
         bytes[len - i - 1] = bytes[i];
         bytes[i] = tmp;
     }
-}
-
-pub fn decodeCode(comptime E: type, code: BackingInt(E)) ?E {
-    const type_info = @typeInfo(E);
-    if (!type_info.@"enum".is_exhaustive)
-        @compileError("code must be exhaustive enum");
-
-    const valid_codes = comptime block: {
-        const fields = type_info.@"enum".fields;
-        var array: [fields.len]BackingInt(E) = undefined;
-        for (fields, &array) |field, *value|
-            value.* = @intCast(field.value);
-        break :block array;
-    };
-
-    for (valid_codes) |value|
-        if (value == code) return @enumFromInt(value);
-    return null;
-}
-
-fn BackingInt(comptime E: type) type {
-    const type_info = @typeInfo(E);
-    return switch (type_info) {
-        .@"enum" => |info| info.tag_type,
-        else => unreachable,
-    };
 }
 
 const testing = @import("std").testing;

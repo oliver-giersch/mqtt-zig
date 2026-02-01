@@ -1,7 +1,86 @@
 const mqtt = @import("../mqtt.zig");
 
+const std = @import("std");
+
 /// The total set of all properties supported in MQTT v5.
 pub const Property = enum(u28) {
+    /// The type associated with a property.
+    pub const PayloadType = enum {
+        /// A boolean value.
+        bool,
+        /// An 8-bit integer value.
+        u8,
+        /// An 16-bit integer value.
+        u16,
+        /// An 32-bit integer value.
+        u32,
+        /// A variable integer value.
+        uvar,
+        /// A slice of binary data.
+        binary_data,
+        /// An UTF-8 encoded string.
+        utf8_string,
+        /// A tuple of two UTF-8 encoded strings.
+        utf8_string_pair,
+
+        inline fn Type(comptime self: Property.PayloadType) type {
+            return switch (self) {
+                .bool => bool,
+                .u8 => u8,
+                .u16 => u16,
+                .u32 => u32,
+                .uvar => mqtt.uvar,
+                .binary_data,
+                .utf8_string,
+                => []const u8,
+                .utf8_string_pair => mqtt.v5_00.StringPair,
+            };
+        }
+    };
+
+    /// A subset of the given set of properties.
+    pub fn Subset(comptime properties: []const Property) type {
+        var field_names: [properties.len][]const u8 = undefined;
+        var field_values: [properties.len]u28 = undefined;
+
+        for (
+            properties,
+            &field_names,
+            &field_values,
+        ) |property, *name, *value| {
+            name.* = @tagName(property);
+            value.* = @intFromEnum(property);
+        }
+
+        // FIXME: calculate the exact number of bits required
+        return @Enum(u28, .exhaustive, &field_names, &field_values);
+    }
+
+    pub fn Payload(comptime E: type) type {
+        const UnionField = std.builtin.Type.UnionField;
+
+        const sub_properties = @typeInfo(E).@"enum".fields;
+        var field_names: [sub_properties.len][]const u8 = undefined;
+        var field_types: [sub_properties.len]type = undefined;
+        var field_attrs: [sub_properties.len]UnionField.Attributes = undefined;
+
+        for (
+            sub_properties,
+            &field_names,
+            &field_types,
+            &field_attrs,
+        ) |sub_property, *field_name, *field_type, *field_attr| {
+            const property: Property = @enumFromInt(sub_property.value);
+            const T = property.payload().Type();
+
+            field_name.* = @tagName(property);
+            field_type.* = T;
+            field_attr.@"align" = null;
+        }
+
+        return @Union(.auto, E, &field_names, &field_types, &field_attrs);
+    }
+
     payload_format_indicator = 0x01,
     message_expiry_interval = 0x02,
     content_type = 0x03,
@@ -30,18 +109,37 @@ pub const Property = enum(u28) {
     subscription_identifier_available = 0x29,
     shared_subscription_available = 0x2a,
 
-    /// Returns `true` if a given property must be used at most once per
-    /// message.
-    pub inline fn isUnique(self: Property) bool {
-        return metadata[self.index()].is_unique;
+    /// Returns the subset of all unique properties in the given list of
+    /// properties.
+    pub inline fn uniqueProperties(comptime E: type) []const Property {
+        const sub_properties = @typeInfo(E).@"enum".fields;
+
+        var unique: [sub_properties.len]Property = undefined;
+        var count: usize = 0;
+        for (sub_properties) |sub_property| {
+            const property: Property = @enumFromInt(sub_property.value);
+            if (property.isUnique()) {
+                unique[count] = property;
+                count += 1;
+            }
+        }
+
+        const final = unique;
+        return final[0..count];
     }
 
     /// Returns the payload type for the given property.
-    pub inline fn payload(self: Property) PayloadType {
+    pub fn payload(comptime self: Property) PayloadType {
         return metadata[self.index()].payload;
     }
 
-    pub inline fn validate(comptime self: Property, val: self.payload().Type()) !void {
+    /// Returns `true` if a given property must be used at most once per
+    /// message.
+    pub fn isUnique(self: Property) bool {
+        return metadata[self.index()].is_unique;
+    }
+
+    pub fn validate(comptime self: Property, val: self.payload().Type()) !void {
         switch (self) {
             .payload_format_indicator => {
                 const specifier: u8 = val;
@@ -67,84 +165,53 @@ pub const Property = enum(u28) {
     }
 };
 
-/// Returns a `union` of all payload types for the given set of properties.
-pub fn Payload(comptime properties: []const Property) type {
-    const UnionField = @import("std").builtin.Type.UnionField;
+/// The subset of valid CONNECT properties.
+pub const ConnectProperty = Property.Subset(&.{
+    .session_expiry_interval,
+    .receive_maximum,
+    .maximum_packet_size,
+    .topic_alias_maximum,
+    .request_response_information,
+    .request_problem_information,
+    .user_property,
+    .authentication_method,
+    .authentication_data,
+});
 
-    var field_names: [properties.len][]const u8 = undefined;
-    var field_types: [properties.len]type = undefined;
-    var field_attrs: [properties.len]UnionField.Attributes = undefined;
+/// The subset of valid will properties.
+pub const WillProperty = Property.Subset(&.{
+    .payload_format_indicator,
+    .message_expiry_interval,
+    .content_type,
+    .response_topic,
+    .correlation_data,
+    .user_property,
+});
 
-    for (
-        properties,
-        &field_names,
-        &field_types,
-        &field_attrs,
-    ) |property, *field_name, *field_type, *field_attr| {
-        const T = property.payload().Type();
+pub const PublishProperty = Property.Subset(&.{
+    .payload_format_indicator,
+    .message_expiry_interval,
+    .content_type,
+    .response_topic,
+    .correlation_data,
+    .subscription_identifier,
+    .topic_alias,
+    .user_property,
+});
 
-        field_name.* = @tagName(property);
-        field_type.* = T;
-        field_attr.@"align" = null;
-    }
+pub const PubackProperty = Property.Subset(&.{
+    .reason_string,
+    .user_property,
+});
 
-    return @Union(.auto, null, &field_names, &field_types, &field_attrs);
-}
+pub const SubscribeProperty = Property.Subset(&.{
+    .subscription_identifier,
+    .user_property,
+});
 
-/// Returns the subset of all unique properties in the given list of properties.
-pub inline fn uniqueProperties(
-    comptime properties: []const Property,
-) []const Property {
-    var unique: [properties.len]Property = undefined;
-    var count: usize = 0;
-    for (properties) |property| {
-        if (property.isUnique()) {
-            unique[count] = property;
-            count += 1;
-        }
-    }
-
-    const final = unique;
-    return final[0..count];
-}
-
-pub const Metadata = struct {
+const Metadata = struct {
     is_unique: bool,
-    payload: PayloadType,
-};
-
-/// The different kinds of supported property payload types.
-pub const PayloadType = enum {
-    /// A boolean value.
-    bool,
-    /// An 8-bit integer value.
-    u8,
-    /// An 16-bit integer value.
-    u16,
-    /// An 32-bit integer value.
-    u32,
-    /// A variable integer value.
-    uvar,
-    /// A slice of binary data.
-    binary_data,
-    /// An UTF-8 encoded string.
-    utf8_string,
-    /// A tuple of two UTF-8 encoded strings.
-    utf8_string_pair,
-
-    pub inline fn Type(comptime self: PayloadType) type {
-        return switch (self) {
-            .bool => bool,
-            .u8 => u8,
-            .u16 => u16,
-            .u32 => u32,
-            .uvar => mqtt.uvar,
-            .binary_data,
-            .utf8_string,
-            => []const u8,
-            .utf8_string_pair => mqtt.v5_00.StringPair,
-        };
-    }
+    payload: Property.PayloadType,
 };
 
 /// The array of all properties.

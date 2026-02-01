@@ -6,7 +6,8 @@ const v3_11 = mqtt.v3_11;
 
 /// Decodes a CONNECT message.
 ///
-/// Asserts, that the decoder has already split off the MQTT version.
+/// Asserts, that the decoder has already split off and validated the MQTT
+/// protocol version.
 pub fn connect(
     decoder: *mqtt.Decoder,
     header: *const mqtt.Header,
@@ -17,17 +18,21 @@ pub fn connect(
 
     const flags, const keep_alive = try mqtt.decode.connect.variableHeader(decoder);
     const client_id = try decoder.splitUtf8String();
-    mqtt.validateClientId(client_id, strict) catch return error.InvalidClientId;
+    mqtt.validateClientID(client_id, strict) catch return error.InvalidClientId;
 
+    // Decode the optional client will message.
     const will = if (flags.will_flag)
         try mqtt.decode.connect.will(decoder, flags)
     else
         null;
+
+    // Decode the optional client authentication data.
     const auth = if (flags.user_flag)
         try mqtt.decode.connect.auth(decoder, flags)
     else
         null;
 
+    try decoder.finalize();
     return .{
         .clean_session = flags.clean_session,
         .will = will,
@@ -50,15 +55,7 @@ pub fn connack(
         try decoder.split(u8),
     ) orelse return error.InvalidReturnCode;
 
-    //const return_code: v3_11.Connack.ReturnCode = switch () {
-    //    0...5 => |rc| block: {
-    //        if (rc != 0 and session_present)
-    //            return error.InvalidConnack;
-    //        break :block @enumFromInt(rc);
-    //    },
-    //    else => return error.InvalidReturnCode,
-    //};
-
+    try decoder.finalize();
     return .{
         .session_present = session_present,
         .return_code = return_code,

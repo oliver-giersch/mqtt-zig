@@ -194,6 +194,32 @@ pub fn stateless(
     };
 }
 
+pub fn code(comptime E: type, value: BackingInt(E)) ?E {
+    const type_info = @typeInfo(E);
+    if (!type_info.@"enum".is_exhaustive)
+        @compileError("code must be exhaustive enum");
+
+    const valid_codes = comptime block: {
+        const fields = type_info.@"enum".fields;
+        var array: [fields.len]BackingInt(E) = undefined;
+        for (fields, &array) |field, *v|
+            v.* = @intCast(field.value);
+        break :block array;
+    };
+
+    for (valid_codes) |v|
+        if (value == v) return @enumFromInt(value);
+    return null;
+}
+
+fn BackingInt(comptime E: type) type {
+    const type_info = @typeInfo(E);
+    return switch (type_info) {
+        .@"enum" => |info| info.tag_type,
+        else => unreachable,
+    };
+}
+
 const testing = @import("std").testing;
 
 test "decode header" {
