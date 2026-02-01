@@ -50,7 +50,7 @@ pub fn connack(
     mqtt.assert(header.msg_type == .connack);
 
     const session_present = try decoder.splitBool();
-    const return_code = mqtt.decodeCode(
+    const return_code = mqtt.decode.code(
         v3_11.Connack.ReturnCode,
         try decoder.split(u8),
     ) orelse return error.InvalidReturnCode;

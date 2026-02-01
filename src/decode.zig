@@ -67,6 +67,8 @@ pub fn qos(bits: u2) mqtt.InvalidQos!mqtt.Qos {
 /// }
 /// ```
 pub const connect = struct {
+    pub const InvalidFlags = mqtt.ConnectFlags.InvalidFlags;
+
     /// Decodes the CONNECT message MQTT version and validates the supplied
     /// protocol name.
     pub fn version(decoder: *mqtt.Decoder) mqtt.Decoder.Error(mqtt.InvalidVersion)!mqtt.Version {
@@ -87,7 +89,9 @@ pub const connect = struct {
     }
 
     /// Decodes the CONNECT message variable header.
-    pub fn variableHeader(decoder: *mqtt.Decoder) !struct { mqtt.ConnectFlags, u16 } {
+    pub fn variableHeader(
+        decoder: *mqtt.Decoder,
+    ) mqtt.Decoder.Error(InvalidFlags)!struct { mqtt.ConnectFlags, u16 } {
         const byte = try decoder.split(u8);
         const flags = try connectFlags(byte);
         const keep_alive = try decoder.split(u16);
@@ -95,7 +99,10 @@ pub const connect = struct {
         return .{ flags, keep_alive };
     }
 
-    pub fn will(decoder: *mqtt.Decoder, flags: mqtt.ConnectFlags) !mqtt.Will {
+    pub fn will(
+        decoder: *mqtt.Decoder,
+        flags: mqtt.ConnectFlags,
+    ) mqtt.Decoder.StringError!mqtt.Will {
         const topic = try decoder.splitUtf8String();
         const payload = try decoder.splitByteString();
 
@@ -107,7 +114,10 @@ pub const connect = struct {
         };
     }
 
-    pub fn auth(decoder: *mqtt.Decoder, flags: mqtt.ConnectFlags) !mqtt.Auth {
+    pub fn auth(
+        decoder: *mqtt.Decoder,
+        flags: mqtt.ConnectFlags,
+    ) mqtt.Decoder.StringError!mqtt.Auth {
         const user = try decoder.splitUtf8String();
         if (flags.pass_flag) {
             const pass = try decoder.splitByteString();
@@ -117,7 +127,7 @@ pub const connect = struct {
         }
     }
 
-    fn connectFlags(byte: u8) !mqtt.ConnectFlags {
+    fn connectFlags(byte: u8) InvalidFlags!mqtt.ConnectFlags {
         const bits = struct {
             const reserved = 0x1 << 0;
             const clean_session = 0x1 << 1;

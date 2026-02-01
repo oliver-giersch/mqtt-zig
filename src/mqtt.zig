@@ -184,6 +184,8 @@ pub const Auth = union(enum) {
 
 /// The flags of an CONNECT message.
 pub const ConnectFlags = packed struct(u8) {
+    pub const InvalidFlags = error{InvalidConnectFlags};
+
     reserved: u1 = 0,
     clean_session: bool,
     will_flag: bool,
@@ -229,6 +231,7 @@ pub const InvalidMessageType = error{InvalidMessageType};
 pub const InvalidMessageFlags = error{InvalidFlags} || InvalidQos;
 pub const InvalidMessageHeader = InvalidMessageType || InvalidMessageFlags;
 pub const InvalidVersion = error{ InvalidProtocolName, InvalidProtocolVersion };
+pub const InvalidClientID = error{InvalidClientID};
 pub const InvalidPacketID = error{InvalidPacketID};
 pub const InvalidStringLength = error{InvalidStringLength};
 pub const InvalidQos = error{InvalidQos};

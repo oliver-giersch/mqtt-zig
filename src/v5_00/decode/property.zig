@@ -61,7 +61,7 @@ fn Decoder(comptime E: type) type {
                 else => err,
             };
 
-            const property = mqtt.decodeCode(SubProperty, id.val) orelse
+            const property = mqtt.decode.code(SubProperty, id.val) orelse
                 return error.InvalidProperty;
             return property;
         }
