@@ -25,6 +25,7 @@ pub fn connect(
     mqtt.assert(decoder.len() == header.remaining_len.val - mqtt.Version.byte_count);
 
     const flags, const keep_alive = try mqtt.decode.connect.variableHeader(decoder);
+    const property_decoder: ConnectPropertyDecoder = try .splitOff(decoder);
     const client_id = try decoder.splitUtf8String();
     mqtt.validateClientID(client_id, strict) catch return error.InvalidClientId;
 
@@ -41,7 +42,6 @@ pub fn connect(
     else
         null;
 
-    const property_decoder: ConnectPropertyDecoder = try .splitOff(decoder);
     try decoder.finalize();
 
     const msg: v5_00.Connect = .{
@@ -138,19 +138,19 @@ test {
 
 test "decode v5.00 CONNECT" {
     const buf: []const u8 = &.{
-        0x10, 0x32, 0x00, 0x04, 0x4D, 0x51, 0x54, 0x54, 0x05, 0xC2, 0x00,
-        0x3C, 0x13, 0x11, 0x00, 0x00, 0x00, 0x3C, 0x26, 0x00, 0x03, 0x61,
-        0x70, 0x70, 0x00, 0x04, 0x74, 0x65, 0x73, 0x74, 0x00, 0x0B, 0x63,
-        0x6C, 0x69, 0x65, 0x6E, 0x74, 0x2D, 0x30, 0x30, 0x31, 0x00, 0x08,
-        0x75, 0x73, 0x65, 0x72, 0x6E, 0x61, 0x6D, 0x65, 0x00, 0x08, 0x70,
-        0x61, 0x73, 0x73, 0x77, 0x6F, 0x72, 0x64,
+        0x10, 0x3C, 0x00, 0x04, 0x4D, 0x51, 0x54, 0x54, 0x05, 0xC2, 0x00, 0x3C,
+        0x11, 0x11, 0x00, 0x00, 0x00, 0x3C, 0x26, 0x00, 0x03, 0x61, 0x70, 0x70,
+        0x00, 0x04, 0x74, 0x65, 0x73, 0x74, 0x00, 0x0A, 0x63, 0x6C, 0x69, 0x65,
+        0x6E, 0x74, 0x2D, 0x30, 0x30, 0x31, 0x00, 0x08, 0x75, 0x73, 0x65, 0x72,
+        0x6E, 0x61, 0x6D, 0x65, 0x00, 0x08, 0x70, 0x61, 0x73, 0x73, 0x77, 0x6F,
+        0x72, 0x64,
     };
 
     var streaming = mqtt.Decoder.streaming(buf);
     const header = try streaming.splitHeader(null);
 
     try testing.expectEqual(.connect, header.msg_type);
-    try testing.expectEqual(0x32, header.remaining_len.val);
+    try testing.expectEqual(60, header.remaining_len.val);
 
     var decoder = try streaming.splitPacket(&header);
     _ = try mqtt.decode.connect.version(&decoder);
@@ -158,18 +158,36 @@ test "decode v5.00 CONNECT" {
     const msg, var property_decoder = try mqtt.v5_00.decode.connect(
         &decoder,
         &header,
-        true,
+        false,
     );
 
     try testing.expectEqual(true, msg.clean_start);
     try testing.expectEqual(60, msg.keep_alive);
     try testing.expectEqual(null, msg.will);
-    try testing.expectEqual(null, msg.auth);
 
-    const property1 = try property_decoder.decodeNext();
-    var expected: ConnectPropertyDecoder.Payload = .{ .session_expiry_interval = 60 };
-    try testing.expectEqual(expected, property1);
-    const property2 = try property_decoder.decodeNext();
-    expected = .{ .user_property = .{ .key = "app", .val = "test" } };
-    try testing.expectEqual(expected, property2);
+    switch (msg.auth.?) {
+        .full => |full| {
+            try testing.expectEqualStrings("username", full.user);
+            try testing.expectEqualStrings("password", full.pass);
+        },
+        else => unreachable,
+    }
+
+    var i: usize = 0;
+    while (try property_decoder.decodeNext()) |prop| {
+        switch (prop) {
+            .session_expiry_interval => |payload| {
+                try testing.expectEqual(60, payload);
+                try testing.expectEqual(0, i);
+            },
+            .user_property => |payload| {
+                try testing.expectEqualStrings("app", payload.key);
+                try testing.expectEqualStrings("test", payload.val);
+                try testing.expectEqual(1, i);
+            },
+            else => return error.UnexpectedProperty,
+        }
+
+        i += 1;
+    }
 }

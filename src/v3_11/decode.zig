@@ -50,7 +50,7 @@ pub fn connack(
     mqtt.assert(header.msg_type == .connack);
 
     const session_present = try decoder.splitBool();
-    const return_code = mqtt.decode.code(
+    const return_code = mqtt.decode.resultCode(
         v3_11.Connack.ReturnCode,
         try decoder.split(u8),
     ) orelse return error.InvalidReturnCode;
@@ -156,7 +156,8 @@ pub fn suback(decoder: *mqtt.Decoder) !v3_11.Suback {
 pub fn unsubscribe(
     decoder: *mqtt.Decoder,
 ) !struct { v3_11.Unsubscribe, v3_11.decode.UnsubDecoder } {
-    const unsub = v3_11.Unsubscribe{ .packet_id = try decoder.splitPacketID() };
+    const packet_id = try decoder.splitPacketID();
+    const unsub = v3_11.Unsubscribe{ .packet_id = packet_id };
     const unsub_decoder = UnsubDecoder{ .inner = decoder.splitOffRest() };
     try decoder.finalize();
 
@@ -231,7 +232,7 @@ pub const UnsubDecoder = struct {
         var c: usize = 0;
 
         while (decoder.len() > 0) {
-            _ = decoder.splitByteStr() catch return error.PacketLengthMismatch;
+            _ = decoder.splitByteString() catch return error.PacketLengthMismatch;
             c += 1;
         }
 

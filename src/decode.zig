@@ -204,7 +204,7 @@ pub fn stateless(
     };
 }
 
-pub fn code(comptime E: type, value: BackingInt(E)) ?E {
+pub fn resultCode(comptime E: type, value: BackingInt(E)) ?E {
     const type_info = @typeInfo(E);
     if (!type_info.@"enum".is_exhaustive)
         @compileError("code must be exhaustive enum");
