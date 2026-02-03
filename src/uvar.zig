@@ -5,6 +5,8 @@ const mqtt = @import("mqtt.zig");
 
 const Self = @This();
 
+/// The zero value.
+pub const zero: Self = .{ .val = 0 };
 /// The maximum value for an uvar.
 pub const max: u28 = ~@as(u28, 0);
 
@@ -46,6 +48,10 @@ pub const Bytes = struct {
 
 /// The decoded value of a variable length integer.
 val: u28,
+
+pub fn eql(self: Self, other: Self) bool {
+    return self.val == other.val;
+}
 
 pub fn castUsize(self: Self) if (mqtt.is_16bit) ?usize else usize {
     if (!comptime mqtt.is_16bit)

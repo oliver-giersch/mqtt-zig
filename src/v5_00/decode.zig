@@ -51,7 +51,6 @@ pub fn connect(
         .keep_alive = keep_alive,
         .client_id = client_id,
     };
-
     return .{ msg, property_decoder };
 }
 
@@ -79,7 +78,6 @@ pub fn publish(
         .packet_id = packet_id,
         .payload = payload,
     };
-
     return .{ msg, property_decoder };
 }
 
@@ -90,25 +88,18 @@ pub fn puback(
     mqtt.assert(header.msg_type == .puback);
 
     const packet_id: mqtt.PacketID = try decoder.splitPacketID();
-    const reason_code: v5_00.Puback.ReasonCode = switch (try decoder.split(u8)) {
-        0x0 => .success,
-        0x10 => .no_matching_subscribers,
-        0x80 => .unspecified_error,
-        0x83 => .implementation_specific_error,
-        0x87 => .not_authorized,
-        0x90 => .topic_name_invalid,
-        0x91 => .packet_id_in_use,
-        0x97 => .quota_exceeded,
-        0x99 => .payload_format_invalid,
-        else => return error.InvalidReasonCode,
-    };
+    const reason_code = mqtt.decode.resultCode(
+        v5_00.Puback.ReasonCode,
+        try decoder.split(u8),
+    );
+
+    const property_decoder: PubackPropertyDecoder = try .splitOff(decoder);
+    try decoder.finalize();
 
     const msg: v5_00.Puback = .{
         .packet_id = packet_id,
         .reason_code = reason_code,
     };
-    const property_decoder: PubackPropertyDecoder = try .splitOff(decoder);
-
     return .{ msg, property_decoder };
 }
 
